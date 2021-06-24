@@ -431,7 +431,8 @@ public class SchemaManager {
    * @param records The records used to get the unionized table description
    * @return The resulting table description
    */
-  private String getUnionizedTableDescription(List<SinkRecord> records) {
+  @VisibleForTesting
+  String getUnionizedTableDescription(List<SinkRecord> records) {
     String tableDescription = null;
     for (SinkRecord record : records) {
       Schema kafkaValueSchema = schemaRetriever.retrieveValueSchema(record);
