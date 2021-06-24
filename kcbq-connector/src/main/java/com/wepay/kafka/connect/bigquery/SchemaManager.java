@@ -435,6 +435,9 @@ public class SchemaManager {
     String tableDescription = null;
     for (SinkRecord record : records) {
       Schema kafkaValueSchema = schemaRetriever.retrieveValueSchema(record);
+      if (kafkaValueSchema == null) {
+        continue;
+      }
       tableDescription = kafkaValueSchema.doc() != null ? kafkaValueSchema.doc() : tableDescription;
     }
     return tableDescription;
