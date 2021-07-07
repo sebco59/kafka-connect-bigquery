@@ -21,21 +21,17 @@ package com.wepay.kafka.connect.bigquery.convert;
 
 import com.google.cloud.bigquery.FieldList;
 import com.google.cloud.bigquery.LegacySQLTypeName;
-
 import com.wepay.kafka.connect.bigquery.convert.logicaltype.DebeziumLogicalConverters;
 import com.wepay.kafka.connect.bigquery.convert.logicaltype.KafkaLogicalConverters;
 import com.wepay.kafka.connect.bigquery.convert.logicaltype.LogicalConverterRegistry;
 import com.wepay.kafka.connect.bigquery.convert.logicaltype.LogicalTypeConverter;
 import com.wepay.kafka.connect.bigquery.exception.ConversionConnectException;
-
+import com.wepay.kafka.connect.bigquery.write.row.AdaptiveBigQueryWriter;
 import org.apache.kafka.connect.data.Schema;
-import org.apache.kafka.connect.data.Schema.Type;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -44,6 +40,7 @@ import java.util.stream.Stream;
  * {@link com.google.cloud.bigquery.Schema BigQuery Schemas}.
  */
 public class BigQuerySchemaConverter implements SchemaConverter<com.google.cloud.bigquery.Schema> {
+  private static final Logger logger = LoggerFactory.getLogger(AdaptiveBigQueryWriter.class);
 
   /**
    * The name of the field that contains keys from a converted Kafka Connect map.
@@ -106,7 +103,9 @@ public class BigQuerySchemaConverter implements SchemaConverter<com.google.cloud
           ConversionConnectException("Top-level Kafka Connect schema must be of type 'struct'");
     }
 
-    throwOnCycle(kafkaConnectSchema, new ArrayList<>());
+    if(throwOnCycle(kafkaConnectSchema, new ArrayList<>())) {
+      throw new ConversionConnectException("Kafka Connect schema contains cycle. See logs for detail");
+    }
 
     List<com.google.cloud.bigquery.Field> fields = kafkaConnectSchema.fields().stream()
         .flatMap(kafkaConnectField ->
@@ -120,26 +119,29 @@ public class BigQuerySchemaConverter implements SchemaConverter<com.google.cloud
     return com.google.cloud.bigquery.Schema.of(fields);
   }
 
-  private void throwOnCycle(Schema kafkaConnectSchema, List<Schema> seenSoFar) {
+  private boolean throwOnCycle(Schema kafkaConnectSchema, List<Schema> seenSoFar) {
     if (PRIMITIVE_TYPE_MAP.containsKey(kafkaConnectSchema.type())) {
-      return;
+      return false;
     }
 
     if (seenSoFar.contains(kafkaConnectSchema)) {
-      throw new ConversionConnectException("Kafka Connect schema contains cycle");
+      logger.error("Cycle detected : " + kafkaConnectSchema.name());
+      return true;
     }
 
     seenSoFar.add(kafkaConnectSchema);
+    boolean hasCycle = false;
     switch(kafkaConnectSchema.type()) {
       case ARRAY:
-        throwOnCycle(kafkaConnectSchema.valueSchema(), seenSoFar);
+        hasCycle = throwOnCycle(kafkaConnectSchema.valueSchema(), seenSoFar);
         break;
       case MAP:
-        throwOnCycle(kafkaConnectSchema.keySchema(), seenSoFar);
-        throwOnCycle(kafkaConnectSchema.valueSchema(), seenSoFar);
+        hasCycle = throwOnCycle(kafkaConnectSchema.keySchema(), seenSoFar);
+        hasCycle = hasCycle || throwOnCycle(kafkaConnectSchema.valueSchema(), seenSoFar);
         break;
       case STRUCT:
-        kafkaConnectSchema.fields().forEach(f -> throwOnCycle(f.schema(), seenSoFar));
+        List<Boolean> cyclesBool = kafkaConnectSchema.fields().stream().map(f -> throwOnCycle(f.schema(), seenSoFar)).collect(Collectors.toList());
+        hasCycle = cyclesBool.stream().anyMatch(aBoolean -> aBoolean);
         break;
       default:
         throw new ConversionConnectException(
@@ -147,6 +149,7 @@ public class BigQuerySchemaConverter implements SchemaConverter<com.google.cloud
         );
     }
     seenSoFar.remove(seenSoFar.size() - 1);
+    return hasCycle;
   }
 
   private Optional<com.google.cloud.bigquery.Field.Builder> convertField(Schema kafkaConnectSchema,
