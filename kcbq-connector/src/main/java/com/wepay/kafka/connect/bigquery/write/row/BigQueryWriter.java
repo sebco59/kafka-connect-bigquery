@@ -24,6 +24,7 @@ import com.google.cloud.bigquery.BigQueryException;
 import com.google.cloud.bigquery.InsertAllRequest;
 
 import com.wepay.kafka.connect.bigquery.exception.BigQueryConnectException;
+import com.wepay.kafka.connect.bigquery.utils.LoggerUtils;
 import com.wepay.kafka.connect.bigquery.utils.PartitionedTableId;
 
 import org.apache.kafka.connect.sink.SinkRecord;
@@ -37,6 +38,7 @@ import java.util.Random;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * A class for writing lists of rows to a BigQuery table.
@@ -124,10 +126,13 @@ public abstract class BigQueryWriter {
               rows.size() - failedRowsMap.size(), failedRowsMap.size());
           // update insert rows and retry in case of partial failure
           rows = getFailedRows(rows, failedRowsMap.keySet(), table);
+          // trace SinkRow to map failed with  sink row
+          LoggerUtils.logRecord(rows.keySet(), logger);
           mostRecentException = new BigQueryConnectException(failedRowsMap);
           retryCount++;
         } else {
           // throw an exception in case of complete failure
+          LoggerUtils.logRecord(rows.keySet(), logger);
           throw new BigQueryConnectException(failedRowsMap);
         }
       } catch (BigQueryException err) {
@@ -155,6 +160,7 @@ public abstract class BigQueryWriter {
           logger.warn("Rate limit exceeded for table {}, attempting retry", table);
           retryCount++;
         } else {
+          LoggerUtils.logRecord(rows.keySet(), logger);
           throw err;
         }
       }

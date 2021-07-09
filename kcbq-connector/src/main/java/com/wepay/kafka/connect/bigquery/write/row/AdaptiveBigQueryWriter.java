@@ -19,29 +19,18 @@
 
 package com.wepay.kafka.connect.bigquery.write.row;
 
-import com.google.cloud.bigquery.BigQuery;
-import com.google.cloud.bigquery.TableId;
-import com.google.cloud.bigquery.BigQueryError;
-import com.google.cloud.bigquery.BigQueryException;
-import com.google.cloud.bigquery.InsertAllRequest;
-import com.google.cloud.bigquery.InsertAllResponse;
-
+import com.google.cloud.bigquery.*;
 import com.wepay.kafka.connect.bigquery.SchemaManager;
 import com.wepay.kafka.connect.bigquery.exception.BigQueryConnectException;
-
 import com.wepay.kafka.connect.bigquery.exception.ExpectedInterruptException;
+import com.wepay.kafka.connect.bigquery.utils.LoggerUtils;
 import com.wepay.kafka.connect.bigquery.utils.PartitionedTableId;
-
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.SortedMap;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * A {@link BigQueryWriter} capable of updating BigQuery table schemas and creating non-existed tables automatically.
@@ -109,6 +98,9 @@ public class AdaptiveBigQueryWriter extends BigQueryWriter {
               && onlyContainsInvalidSchemaErrors(writeResponse.getInsertErrors())) {
         attemptSchemaUpdate(tableId, new ArrayList<>(rows.keySet()));
       }
+      if(writeResponse.hasErrors()) {
+        LoggerUtils.logRecord(rows.keySet(), logger);
+      }
     } catch (BigQueryException exception) {
       // Should only perform one table creation attempt.
       if (isTableNotExistedException(exception) && autoCreateTables) {
@@ -116,6 +108,7 @@ public class AdaptiveBigQueryWriter extends BigQueryWriter {
       } else if (isTableMissingSchema(exception)) {
         attemptSchemaUpdate(tableId, new ArrayList<>(rows.keySet()));
       } else {
+        LoggerUtils.logRecord(rows.keySet(), logger);
         throw exception;
       }
     }
