@@ -312,7 +312,7 @@ public class SchemaManager {
     List<com.google.cloud.bigquery.Schema> bigQuerySchemas = new ArrayList<>();
     Optional.ofNullable(readTableSchema(table)).ifPresent(bigQuerySchemas::add);
     for (SinkRecord record : records) {
-      logger.debut("Convert Schema for :"+record.topic()+"[p="+record.kafkaPartition()+"](o="+record.kafkaOffset()+")");
+      logger.debug("Convert Schema for :"+record.topic()+"[p="+record.kafkaPartition()+"](o="+record.kafkaOffset()+")");
       bigQuerySchemas.add(convertRecordSchema(record));
     }
     return bigQuerySchemas;
